@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Space Invaders</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #000;
+            font-family: Arial, sans-serif;
+        }
+        
+        #game-container {
+            position: relative;
+            width: 800px;
+            height: 600px;
+            overflow: hidden;
+        }
+        
+        #game-canvas {
+            background-color: #000;
+            border: 2px solid #33ff33;
+        }
+        
+        #score {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: #33ff33;
+            font-size: 20px;
+        }
+        
+        #lives {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            color: #33ff33;
+            font-size: 20px;
+        }
+        
+        #start-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: #33ff33;
+        }
+        
+        #start-screen h1 {
+            font-size: 50px;
+            margin-bottom: 20px;
+        }
+        
+        #start-screen button {
+            padding: 10px 20px;
+            font-size: 24px;
+            background-color: #000;
+            color: #33ff33;
+            border: 2px solid #33ff33;
+            cursor: pointer;
+        }
+        
+        #start-screen button:hover {
+            background-color: #33ff33;
+            color: #000;
+        }
+        
+        #game-over {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: #33ff33;
+        }
+        
+        #game-over h1 {
+            font-size: 50px;
+            margin-bottom: 20px;
+        }
+        
+        #game-over button {
+            padding: 10px 20px;
+            font-size: 24px;
+            background-color: #000;
+            color: #33ff33;
+            border: 2px solid #33ff33;
+            cursor: pointer;
+        }
+        
+        #game-over button:hover {
+            background-color: #33ff33;
+            color: #000;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <canvas id="game-canvas" width="800" height="600"></canvas>
+        <div id="score">Score: 0</div>
+        <div id="lives">Lives: 3</div>
+        
+        <div id="start-screen">
+            <h1>SPACE INVADERS</h1>
+            <button id="start-button">START GAME</button>
+        </div>
+        
+        <div id="game-over">
+            <h1>GAME OVER</h1>
+            <div id="final-score">Score: 0</div>
+            <button id="restart-button">PLAY AGAIN</button>
+        </div>
+    </div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const canvas = document.getElementById('game-canvas');
+            const ctx = canvas.getContext('2d');
+            const scoreElement = document.getElementById('score');
+            const livesElement = document.getElementById('lives');
+            const startScreen = document.getElementById('start-screen');
+            const gameOverScreen = document.getElementById('game-over');
+            const startButton = document.getElementById('start-button');
+            const restartButton = document.getElementById('restart-button');
+            const finalScoreElement = document.getElementById('final-score');
+            
+            // ゲーム状態
+            let gameRunning = false;
+            let score = 0;
+            let lives = 3;
+            let level = 1;
+            
+            // プレイヤーの宇宙船
+            const player = {
+                x: canvas.width / 2 - 25,
+                y: canvas.height - 60,
+                width: 50,
+                height: 30,
+                speed: 5,
+                dx: 0
+            };
+            
+            // 敵の宇宙船
+            let enemies = [];
+            const enemyRowCount = 5;
+            const enemyColumnCount = 10;
+            const enemyWidth = 40;
+            const enemyHeight = 30;
+            const enemyPadding = 10;
+            let enemyDirection = 1;
+            let enemySpeed = 1;
+            
+            // レーザー
+            let playerLasers = [];
+            let enemyLasers = [];
+            
+            // キー状態
+            const keys = {};
+            
+            // ゲームループ
+            function gameLoop() {
+                if (!gameRunning) return;
+                
+                // 画面クリア
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                // プレイヤー移動
+                if (keys.ArrowLeft && player.x > 0) {
+                    player.x -= player.speed;
+                }
+                if (keys.ArrowRight && player.x < canvas.width - player.width) {
+                    player.x += player.speed;
+                }
+                
+                // レーザー移動
+                movePlayerLasers();
+                moveEnemyLasers();
+                
+                // 敵移動
+                moveEnemies();
+                
+                // 敵のレーザー発射
+                if (Math.random() < 0.02 && enemies.length > 0) {
+                    const shooter = enemies[Math.floor(Math.random() * enemies.length)];
+                    fireEnemyLaser(shooter.x + shooter.width / 2, shooter.y + shooter.height);
+                }
+                
+                // 描画
+                drawPlayer();
+                drawEnemies();
+                drawPlayerLasers();
+                drawEnemyLasers();
+                
+                // 当たり判定
+                checkCollisions();
+                
+                // 敵がすべて倒された場合
+                if (enemies.length === 0) {
+                    levelUp();
+                }
+                
+                // アニメーションフレーム
+                requestAnimationFrame(gameLoop);
+            }
+            
+            // プレイヤー描画
+            function drawPlayer() {
+                ctx.fillStyle = '#33ff33';
+                ctx.fillRect(player.x, player.y, player.width, player.height);
+                
+                // 宇宙船の形を描画
+                ctx.beginPath();
+                ctx.moveTo(player.x + player.width / 2, player.y);
+                ctx.lineTo(player.x + player.width, player.y + player.height);
+                ctx.lineTo(player.x, player.y + player.height);
+                ctx.closePath();
+                ctx.fillStyle = '#33ff33';
+                ctx.fill();
+            }
+            
+            // 敵初期化
+            function initEnemies() {
+                enemies = [];
+                for (let r = 0; r < enemyRowCount; r++) {
+                    for (let c = 0; c < enemyColumnCount; c++) {
+                        const x = c * (enemyWidth + enemyPadding) + 50;
+                        const y = r * (enemyHeight + enemyPadding) + 50;
+                        const color = r === 0 ? '#ff0000' : (r < 3 ? '#ff9900' : '#ffff00');
+                        enemies.push({ x, y, width: enemyWidth, height: enemyHeight, color, points: (5 - r) * 10 });
+                    }
+                }
+            }
+            
+            // 敵描画
+            function drawEnemies() {
+                enemies.forEach(enemy => {
+                    ctx.fillStyle = enemy.color;
+                    ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
+                    
+                    // 触手
+                    ctx.fillRect(enemy.x + 10, enemy.y + enemy.height, 5, 5);
+                    ctx.fillRect(enemy.x + enemy.width - 15, enemy.y + enemy.height, 5, 5);
+                });
+            }
+            
+            // 敵移動
+            function moveEnemies() {
+                let moveDown = false;
+                
+                // 端に到達したか確認
+                enemies.forEach(enemy => {
+                    if ((enemy.x + enemy.width + enemySpeed * enemyDirection > canvas.width) || 
+                        (enemy.x + enemySpeed * enemyDirection < 0)) {
+                        moveDown = true;
+                    }
+                });
+                
+                if (moveDown) {
+                    // 方向を変更して下に移動
+                    enemyDirection *= -1;
+                    enemies.forEach(enemy => {
+                        enemy.y += 20;
+                    });
+                } else {
+                    // 水平方向に移動
+                    enemies.forEach(enemy => {
+                        enemy.x += enemySpeed * enemyDirection;
+                    });
+                }
+                
+                // 敵が下に到達したかチェック
+                enemies.forEach(enemy => {
+                    if (enemy.y + enemy.height > player.y) {
+                        gameOver();
+                    }
+                });
+            }
+            
+            // プレイヤーレーザー発射
+            function firePlayerLaser() {
+                playerLasers.push({
+                    x: player.x + player.width / 2 - 2,
+                    y: player.y,
+                    width: 4,
+                    height: 15,
+                    speed: 7
+                });
+            }
+            
+            // 敵レーザー発射
+            function fireEnemyLaser(x, y) {
+                enemyLasers.push({
+                    x: x - 2,
+                    y: y,
+                    width: 4,
+                    height: 15,
+                    speed: 3
+                });
+            }
+            
+            // プレイヤーレーザー描画
+            function drawPlayerLasers() {
+                ctx.fillStyle = '#33ff33';
+                playerLasers.forEach(laser => {
+                    ctx.fillRect(laser.x, laser.y, laser.width, laser.height);
+                });
+            }
+            
+            // 敵レーザー描画
+            function drawEnemyLasers() {
+                ctx.fillStyle = '#ff3333';
+                enemyLasers.forEach(laser => {
+                    ctx.fillRect(laser.x, laser.y, laser.width, laser.height);
+                });
+            }
+            
+            // プレイヤーレーザー移動
+            function movePlayerLasers() {
+                for (let i = playerLasers.length - 1; i >= 0; i--) {
+                    playerLasers[i].y -= playerLasers[i].speed;
+                    
+                    // 画面外に出たら削除
+                    if (playerLasers[i].y < 0) {
+                        playerLasers.splice(i, 1);
+                    }
+                }
+            }
+            
+            // 敵レーザー移動
+            function moveEnemyLasers() {
+                for (let i = enemyLasers.length - 1; i >= 0; i--) {
+                    enemyLasers[i].y += enemyLasers[i].speed;
+                    
+                    // 画面外に出たら削除
+                    if (enemyLasers[i].y > canvas.height) {
+                        enemyLasers.splice(i, 1);
+                    }
+                }
+            }
+            
+            // 当たり判定
+            function checkCollisions() {
+                // プレイヤーレーザーと敵
+                for (let i = playerLasers.length - 1; i >= 0; i--) {
+                    const laser = playerLasers[i];
+                    
+                    for (let j = enemies.length - 1; j >= 0; j--) {
+                        const enemy = enemies[j];
+                        
+                        if (laser.x < enemy.x + enemy.width &&
+                            laser.x + laser.width > enemy.x &&
+                            laser.y < enemy.y + enemy.height &&
+                            laser.y + laser.height > enemy.y) {
+                            
+                            // 敵とレーザーを削除
+                            score += enemy.points;
+                            scoreElement.textContent = `Score: ${score}`;
+                            enemies.splice(j, 1);
+                            playerLasers.splice(i, 1);
+                            break;
+                        }
+                    }
+                }
+                
+                // 敵レーザーとプレイヤー
+                for (let i = enemyLasers.length - 1; i >= 0; i--) {
+                    const laser = enemyLasers[i];
+                    
+                    if (laser.x < player.x + player.width &&
+                        laser.x + laser.width > player.x &&
+                        laser.y < player.y + player.height &&
+                        laser.y + laser.height > player.y) {
+                        
+                        // レーザーを削除して命を減らす
+                        enemyLasers.splice(i, 1);
+                        lives--;
+                        livesElement.textContent = `Lives: ${lives}`;
+                        
+                        if (lives <= 0) {
+                            gameOver();
+                        }
+                        break;
+                    }
+                }
+            }
+            
+            // レベルアップ
+            function levelUp() {
+                level++;
+                enemySpeed += 0.5;
+                initEnemies();
+            }
+            
+            // ゲーム開始
+            function startGame() {
+                gameRunning = true;
+                score = 0;
+                lives = 3;
+                level = 1;
+                enemySpeed = 1;
+                
+                scoreElement.textContent = `Score: ${score}`;
+                livesElement.textContent = `Lives: ${lives}`;
+                
+                initEnemies();
+                startScreen.style.display = 'none';
+                gameOverScreen.style.display = 'none';
+                
+                requestAnimationFrame(gameLoop);
+            }
+            
+            // ゲームオーバー
+            function gameOver() {
+                gameRunning = false;
+                finalScoreElement.textContent = `Score: ${score}`;
+                gameOverScreen.style.display = 'flex';
+            }
+            
+            // イベントリスナー
+            document.addEventListener('keydown', function(e) {
+                keys[e.key] = true;
+                
+                if (e.key === ' ' && gameRunning) {
+                    firePlayerLaser();
+                    e.preventDefault();
+                }
+            });
+            
+            document.addEventListener('keyup', function(e) {
+                keys[e.key] = false;
+            });
+            
+            startButton.addEventListener('click', startGame);
+            restartButton.addEventListener('click', startGame);
+        });
+    </script>
+</body>
+</html>
